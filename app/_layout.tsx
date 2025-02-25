@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -8,14 +8,12 @@ import {
   SafeAreaView,
   ScrollView,
   Image,
+  ActivityIndicator,
 } from "react-native";
-import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
 import { useFonts } from "expo-font";
-import { useEffect } from "react";
 import { useColorScheme } from "@/hooks/useColorScheme";
 
-// Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
@@ -26,6 +24,7 @@ export default function RootLayout() {
 
   const [currentScreen, setCurrentScreen] = useState("dietaryRestrictions");
   const [scanCount, setScanCount] = useState(0);
+  const [isScanning, setIsScanning] = useState(false);
   const [restrictions, setRestrictions] = useState({
     Eggs: false,
     Milk: false,
@@ -42,11 +41,21 @@ export default function RootLayout() {
     }
   }, [loaded]);
 
+  useEffect(() => {
+    if (currentScreen === "camera" && isScanning) {
+      setTimeout(() => {
+        setScanCount((prev) => prev + 1);
+        setIsScanning(false);
+        setCurrentScreen("scanResult");
+      }, 3000); // Simulate a 3-second scan
+    }
+  }, [isScanning, currentScreen]);
+
   if (!loaded) {
     return null;
   }
 
-  // 📌 **Ensure Custom Screens Load Before the Default Expo Router**
+  // 📌 **Dietary Restrictions Page**
   if (currentScreen === "dietaryRestrictions") {
     return (
       <SafeAreaView style={styles.safeContainer}>
@@ -81,17 +90,17 @@ export default function RootLayout() {
           </View>
 
           <TouchableOpacity
-            style={styles.button}
+            style={styles.scanButton}
             onPress={() => setCurrentScreen("camera")}
           >
-            <Text style={styles.buttonText}>BEGIN SCAN</Text>
+            <Text style={styles.scanButtonText}>BEGIN SCAN</Text>
           </TouchableOpacity>
         </ScrollView>
       </SafeAreaView>
     );
   }
 
-  // 📸 **Camera Placeholder Screen**
+  // 📸 **Fake Camera Scanning Screen**
   if (currentScreen === "camera") {
     return (
       <SafeAreaView style={styles.safeContainer}>
@@ -100,18 +109,31 @@ export default function RootLayout() {
         </View>
 
         <View style={styles.cameraContainer}>
-          <Text style={styles.cameraText}>📷 Placeholder Camera Screen 📷</Text>
+          <Text style={styles.cameraText}>📸 Scanning Screen 📸</Text>
+
+          {!isScanning ? (
+            <TouchableOpacity
+              style={styles.scanButton}
+              onPress={() => setIsScanning(true)}
+            >
+              <Text style={styles.scanButtonText}>Start Scan</Text>
+            </TouchableOpacity>
+          ) : (
+            <>
+              <ActivityIndicator size="large" color="black" />
+              <Text style={styles.scanningText}>Scanning...</Text>
+            </>
+          )}
         </View>
 
-        <TouchableOpacity
-          style={styles.button}
-          onPress={() => {
-            setScanCount(scanCount + 1);
-            setCurrentScreen("scanResult");
-          }}
-        >
-          <Text style={styles.buttonText}>Simulate Scan</Text>
-        </TouchableOpacity>
+        {!isScanning && (
+          <TouchableOpacity
+            style={styles.scanButton}
+            onPress={() => setCurrentScreen("dietaryRestrictions")}
+          >
+            <Text style={styles.scanButtonText}>Back</Text>
+          </TouchableOpacity>
+        )}
       </SafeAreaView>
     );
   }
@@ -119,64 +141,61 @@ export default function RootLayout() {
   // 🛑 **Scan Result Screen**
   if (currentScreen === "scanResult") {
     return (
-      <SafeAreaView style={styles.safeContainer}>
+      <SafeAreaView
+        style={[
+          styles.safeContainer,
+          { backgroundColor: isSafeScan ? "#90EE90" : "#F08080" },
+        ]}
+      >
         <View style={styles.header}>
           <Text style={styles.headerText}>Scan Barcode</Text>
         </View>
 
-        <View
-          style={[
-            styles.alertBox,
-            { backgroundColor: isSafeScan ? "#90EE90" : "#F08080" },
-          ]}
-        >
-          <Text style={styles.alertText}>
+        <View style={styles.resultContainer}>
+          <Text
+            style={[
+              styles.resultText,
+              { backgroundColor: isSafeScan ? "#4CAF50" : "#D33" },
+            ]}
+          >
             {isSafeScan ? "SAFE TO CONSUME" : "CANNOT CONSUME"}
           </Text>
+
+          {!isSafeScan && (
+            <View style={styles.ingredientBox}>
+              <Text style={styles.ingredientText}>
+                This item contains the following ingredient from your list:
+              </Text>
+              {detectedIngredients.map((item, index) => (
+                <Text key={index} style={styles.ingredientItem}>
+                  • {item}
+                </Text>
+              ))}
+            </View>
+          )}
         </View>
 
-        <Image
-          source={{
-            uri: "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e3/UPC-A.svg/320px-UPC-A.svg.png",
-          }}
-          style={styles.barcodeImage}
-        />
-
-        {!isSafeScan && (
-          <View style={styles.ingredientBox}>
-            <Text style={styles.ingredientText}>
-              This item contains the following ingredient from your list:
-            </Text>
-            {detectedIngredients.map((item, index) => (
-              <Text key={index} style={styles.ingredientItem}>
-                • {item}
-              </Text>
-            ))}
-          </View>
-        )}
-
         <TouchableOpacity
-          style={styles.darkButton}
+          style={styles.nextScanButton}
           onPress={() => setCurrentScreen("camera")}
         >
-          <Text style={styles.darkButtonText}>Scan Next Item</Text>
+          <Text style={styles.nextScanButtonText}>Scan Next Item</Text>
         </TouchableOpacity>
       </SafeAreaView>
     );
   }
 
-  return null; // 🔥 **This prevents Expo Router from overriding your screens**
+  return null;
 }
 
+// 🔹 **Styles**
 const styles = StyleSheet.create({
   safeContainer: {
     flex: 1,
-    backgroundColor: "#C0C0C0",
     alignItems: "center",
     paddingTop: 20,
   },
 
-  // 🔹 HEADER STYLING (Consistent Across All Pages)
   header: {
     width: "100%",
     backgroundColor: "black",
@@ -189,7 +208,6 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
 
-  // 🔹 DIETARY RESTRICTIONS PAGE STYLES
   container: {
     width: "90%",
     alignItems: "center",
@@ -202,117 +220,92 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     width: "100%",
     alignItems: "center",
-    marginBottom: 15,
-  },
-  instructionText: {
-    textAlign: "center",
-    fontSize: 14,
-    fontWeight: "500",
   },
 
   list: {
     width: "100%",
     paddingVertical: 10,
-    borderRadius: 10,
   },
+
   item: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: "#E0E0E0", // Light gray box for each item
+    backgroundColor: "#E0E0E0",
     paddingVertical: 12,
     paddingHorizontal: 15,
     borderRadius: 10,
-    marginVertical: 8, // Adds spacing between items
-  },
-  label: {
-    fontSize: 18,
-    fontWeight: "bold",
+    marginVertical: 8,
   },
 
-  button: {
-    backgroundColor: "white",
+  scanButton: {
+    backgroundColor: "black",
     paddingVertical: 15,
-    paddingHorizontal: 40,
+    paddingHorizontal: 100,
     borderRadius: 10,
     marginTop: 20,
     width: "90%",
     alignItems: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.2,
-    shadowRadius: 5,
-    elevation: 3,
-  },
-  buttonText: {
-    fontSize: 18,
-    fontWeight: "bold",
   },
 
-  // 🔹 CAMERA PLACEHOLDER PAGE STYLES
+  scanButtonText: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "white",
+  },
+
   cameraContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     width: "100%",
-    paddingHorizontal: 20,
   },
+
   cameraText: {
+    fontSize: 20,
+    fontWeight: "bold",
+    textAlign: "center",
+  },
+
+  scanningText: {
+    fontSize: 20,
+    fontWeight: "bold",
+    marginTop: 20,
+  },
+
+  resultContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    width: "100%",
+  },
+
+  resultText: {
     fontSize: 24,
     fontWeight: "bold",
     textAlign: "center",
-    marginBottom: 40, // Added space below text
-  },
-
-  // 🔹 SCAN RESULT PAGE STYLES
-  alertBox: {
-    backgroundColor: "#F08080",
-    padding: 15,
+    paddingVertical: 15,
+    paddingHorizontal: 30,
     borderRadius: 10,
-    width: "90%",
-    alignItems: "center",
-    marginVertical: 15,
-    justifyContent: "center",
-  },
-  alertText: {
-    fontSize: 18,
-    fontWeight: "bold",
-    textAlign: "center",
-    color: "black",
   },
 
   ingredientBox: {
     backgroundColor: "white",
     padding: 15,
     borderRadius: 10,
-    width: "90%",
-    alignItems: "center",
-    marginVertical: 10,
-  },
-  ingredientText: {
-    fontSize: 16,
-    fontWeight: "bold",
-    textAlign: "center",
-    marginBottom: 5,
-  },
-  ingredientItem: {
-    fontSize: 16,
-    color: "black",
-    marginTop: 5,
+    marginTop: 20,
   },
 
-  darkButton: {
-    backgroundColor: "#444",
-    padding: 15,
-    borderRadius: 10,
-    marginTop: 20,
-    width: "80%",
+  nextScanButton: {
+    backgroundColor: "black",
+    paddingVertical: 20,
+    width: "100%",
     alignItems: "center",
-    justifyContent: "center",
   },
-  darkButtonText: {
+
+  nextScanButtonText: {
     fontSize: 18,
     fontWeight: "bold",
     color: "white",
-    textAlign: "center",
   },
 });
