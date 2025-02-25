@@ -34,11 +34,13 @@
         }
       ],
       "expo-barcode-scanner",
-      "expo-camera",
+      [
+        "expo-camera",
         {
           "cameraPermission": "Allow us to access your camera",
           "recordAudioAndroid": false
         }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
