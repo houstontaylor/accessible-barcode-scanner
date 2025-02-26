@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import * as SplashScreen from "expo-splash-screen";
+import * as Haptics from "expo-haptics";
 import { useFonts } from "expo-font";
 import { useColorScheme } from "@/hooks/useColorScheme";
 
@@ -43,19 +44,40 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (currentScreen === "camera" && isScanning) {
+      let scanInterval = setInterval(() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }, 800);
+
       setTimeout(() => {
+        clearInterval(scanInterval);
         setScanCount((prev) => prev + 1);
         setIsScanning(false);
         setCurrentScreen("scanResult");
-      }, 3000); // Simulate a 3-second scan
+      }, 3000);
+
+      return () => clearInterval(scanInterval);
     }
   }, [isScanning, currentScreen]);
+
+  useEffect(() => {
+    if (currentScreen === "scanResult") {
+      if (!isSafeScan) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      } else {
+        setTimeout(() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        }, 200);
+        setTimeout(() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        }, 400);
+      }
+    }
+  }, [currentScreen]);
 
   if (!loaded) {
     return null;
   }
 
-  // 📌 **Dietary Restrictions Page**
   if (currentScreen === "dietaryRestrictions") {
     return (
       <SafeAreaView style={styles.safeContainer}>
@@ -100,7 +122,6 @@ export default function RootLayout() {
     );
   }
 
-  // 📸 **Fake Camera Scanning Screen**
   if (currentScreen === "camera") {
     return (
       <SafeAreaView style={styles.safeContainer}>
@@ -110,7 +131,6 @@ export default function RootLayout() {
 
         <View style={styles.cameraContainer}>
           <Text style={styles.cameraText}>📸 Scanning Screen 📸</Text>
-
           {!isScanning ? (
             <TouchableOpacity
               style={styles.scanButton}
@@ -125,20 +145,10 @@ export default function RootLayout() {
             </>
           )}
         </View>
-
-        {!isScanning && (
-          <TouchableOpacity
-            style={styles.scanButton}
-            onPress={() => setCurrentScreen("dietaryRestrictions")}
-          >
-            <Text style={styles.scanButtonText}>Back</Text>
-          </TouchableOpacity>
-        )}
       </SafeAreaView>
     );
   }
 
-  // 🛑 **Scan Result Screen**
   if (currentScreen === "scanResult") {
     return (
       <SafeAreaView
@@ -160,7 +170,6 @@ export default function RootLayout() {
           >
             {isSafeScan ? "SAFE TO CONSUME" : "CANNOT CONSUME"}
           </Text>
-
           {!isSafeScan && (
             <View style={styles.ingredientBox}>
               <Text style={styles.ingredientText}>
