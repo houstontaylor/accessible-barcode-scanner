@@ -147,10 +147,12 @@ export default function RootLayout() {
           { backgroundColor: isSafeScan ? "#90EE90" : "#F08080" },
         ]}
       >
-        <View style={styles.header}>
-          <Text style={styles.headerText}>Scan Barcode</Text>
-        </View>
-
+        <TouchableOpacity
+        style={styles.alternativeButton}
+        onPress={() => setCurrentScreen("alternativeItems")}
+      >
+        <Text style={styles.alternativeButtonText}>Tap to see alternative items</Text>
+      </TouchableOpacity>
         <View style={styles.resultContainer}>
           <Text
             style={[
@@ -179,11 +181,35 @@ export default function RootLayout() {
           style={styles.nextScanButton}
           onPress={() => setCurrentScreen("camera")}
         >
-          <Text style={styles.nextScanButtonText}>Scan Next Item</Text>
+          <Text style={styles.nextScanButtonText}>Tap to Scan Next Item</Text>
         </TouchableOpacity>
       </SafeAreaView>
     );
   }
+
+  if (currentScreen === "alternativeItems") {
+    const alternativeItems = ["Sunflower Butter", "Almond Butter", "Soy Butter"];
+    const alternativeText = `Alternative Items: ${alternativeItems.join(", ")}`;
+  
+    return (
+      <SafeAreaView style={styles.safeContainer}>
+        <View style={styles.header}>
+          <Text style={styles.headerText}>Alternative Items</Text>
+        </View>
+  
+        <View style={styles.alternativeContainer}>
+          <Text style={styles.alternativeText}>{alternativeText}</Text>
+        </View>
+  
+        <TouchableOpacity
+          style={styles.largeNextScanButton}
+          onPress={() => setCurrentScreen("camera")}
+        >
+          <Text style={styles.nextScanButtonText}>Tap to Scan Next Item</Text>
+        </TouchableOpacity>
+      </SafeAreaView>
+    );
+  }  
 
   return null;
 }
@@ -298,7 +324,7 @@ const styles = StyleSheet.create({
 
   nextScanButton: {
     backgroundColor: "black",
-    paddingVertical: 20,
+    paddingVertical: 100,
     width: "100%",
     alignItems: "center",
   },
@@ -308,4 +334,50 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "white",
   },
+
+  alternativeButton: {
+    backgroundColor: "black",
+    paddingVertical: 100,
+    paddingHorizontal: 20,
+    alignItems: "center",
+    width: "100%",
+  },
+  
+  alternativeButtonText: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "white",
+  },
+  
+  alternativeContainer: {
+    flex: 1,
+    justifyContent: "center",
+    width: "90%",
+  },
+  
+  alternativeText: {
+    fontSize: 35,
+  },
+  
+  largeNextScanButton: {
+    backgroundColor: "black",
+    paddingVertical: 100, 
+    width: "100%",
+    alignItems: "center",
+  },
+
+  alternativeList: {
+    marginTop: 10,
+    backgroundColor: "white",
+    padding: 15,
+    borderRadius: 10,
+    alignItems: "flex-start",
+    width: "90%",
+  },
+  
+  alternativeItem: {
+    fontSize: 18,
+    paddingVertical: 5,
+  },  
+  
 });
