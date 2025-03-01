@@ -73,19 +73,29 @@ export default function RootLayout() {
 
           <View style={styles.list}>
             {Object.keys(restrictions).map((item) => (
-              <View key={item} style={styles.item}>
-                <Switch
-                  value={restrictions[item]}
-                  onValueChange={() =>
-                    setRestrictions({
-                      ...restrictions,
-                      [item]: !restrictions[item],
-                    })
-                  }
-                  trackColor={{ false: "#D33", true: "#4CAF50" }}
-                />
-                <Text style={styles.label}>{item}</Text>
-              </View>
+              <TouchableOpacity
+                key={item}
+                style={[
+                  styles.buttonItem,
+                  {
+                    backgroundColor: restrictions[item] ? "#4CAF50" : "#E0E0E0",
+                  }, // Green if selected, Gray otherwise
+                ]}
+                onPress={() =>
+                  setRestrictions({
+                    ...restrictions,
+                    [item]: !restrictions[item],
+                  })
+                }
+                accessibilityLabel={`${item}, currently ${
+                  restrictions[item] ? "selected" : "not selected"
+                }`}
+                accessibilityHint={`Double tap to ${
+                  restrictions[item] ? "deselect" : "select"
+                } ${item}`}
+              >
+                <Text style={styles.buttonText}>{item}</Text>
+              </TouchableOpacity>
             ))}
           </View>
 
@@ -109,7 +119,7 @@ export default function RootLayout() {
         </View>
 
         <View style={styles.cameraContainer}>
-          <Text style={styles.cameraText}>📸 Scanning Screen 📸</Text>
+          <Text style={styles.cameraText}>Scanning Screen</Text>
 
           {!isScanning ? (
             <TouchableOpacity
@@ -148,11 +158,13 @@ export default function RootLayout() {
         ]}
       >
         <TouchableOpacity
-        style={styles.alternativeButton}
-        onPress={() => setCurrentScreen("alternativeItems")}
-      >
-        <Text style={styles.alternativeButtonText}>Tap to see alternative items</Text>
-      </TouchableOpacity>
+          style={styles.alternativeButton}
+          onPress={() => setCurrentScreen("alternativeItems")}
+        >
+          <Text style={styles.alternativeButtonText}>
+            Tap to see alternative items
+          </Text>
+        </TouchableOpacity>
         <View style={styles.resultContainer}>
           <Text
             style={[
@@ -188,19 +200,23 @@ export default function RootLayout() {
   }
 
   if (currentScreen === "alternativeItems") {
-    const alternativeItems = ["Sunflower Butter", "Almond Butter", "Soy Butter"];
+    const alternativeItems = [
+      "Sunflower Butter",
+      "Almond Butter",
+      "Soy Butter",
+    ];
     const alternativeText = `Alternative Items: ${alternativeItems.join(", ")}`;
-  
+
     return (
       <SafeAreaView style={styles.safeContainer}>
         <View style={styles.header}>
           <Text style={styles.headerText}>Alternative Items</Text>
         </View>
-  
+
         <View style={styles.alternativeContainer}>
           <Text style={styles.alternativeText}>{alternativeText}</Text>
         </View>
-  
+
         <TouchableOpacity
           style={styles.largeNextScanButton}
           onPress={() => setCurrentScreen("camera")}
@@ -209,19 +225,29 @@ export default function RootLayout() {
         </TouchableOpacity>
       </SafeAreaView>
     );
-  }  
+  }
 
   return null;
 }
 
 // 🔹 **Styles**
 const styles = StyleSheet.create({
+  label: {
+    fontSize: 30, // Increased text size
+    fontWeight: "bold", // Make it stand out
+    marginRight: 15, // Add spacing from the switch
+  },
+  switchContainer: {
+    transform: [{ scale: 2.5 }], // Scale up the switch size
+  },
   safeContainer: {
     flex: 1,
     alignItems: "center",
     paddingTop: 20,
   },
-
+  instructionText: {
+    fontSize: 25,
+  },
   header: {
     width: "100%",
     backgroundColor: "black",
@@ -251,6 +277,7 @@ const styles = StyleSheet.create({
   list: {
     width: "100%",
     paddingVertical: 10,
+    alignItems: "center",
   },
 
   item: {
@@ -262,15 +289,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
     borderRadius: 10,
     marginVertical: 8,
+    marginBottom: 15, // Adjust spacing for better readability
   },
 
   scanButton: {
     backgroundColor: "black",
-    paddingVertical: 15,
+    paddingVertical: 130,
     paddingHorizontal: 100,
     borderRadius: 10,
     marginTop: 20,
-    width: "90%",
+    width: "100%",
     alignItems: "center",
   },
 
@@ -324,7 +352,7 @@ const styles = StyleSheet.create({
 
   nextScanButton: {
     backgroundColor: "black",
-    paddingVertical: 100,
+    paddingVertical: 130,
     width: "100%",
     alignItems: "center",
   },
@@ -337,31 +365,31 @@ const styles = StyleSheet.create({
 
   alternativeButton: {
     backgroundColor: "black",
-    paddingVertical: 100,
+    paddingVertical: 130,
     paddingHorizontal: 20,
     alignItems: "center",
     width: "100%",
   },
-  
+
   alternativeButtonText: {
     fontSize: 18,
     fontWeight: "bold",
     color: "white",
   },
-  
+
   alternativeContainer: {
     flex: 1,
     justifyContent: "center",
     width: "90%",
   },
-  
+
   alternativeText: {
     fontSize: 35,
   },
-  
+
   largeNextScanButton: {
     backgroundColor: "black",
-    paddingVertical: 100, 
+    paddingVertical: 100,
     width: "100%",
     alignItems: "center",
   },
@@ -374,10 +402,25 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     width: "90%",
   },
-  
+
   alternativeItem: {
     fontSize: 18,
     paddingVertical: 5,
-  },  
-  
+  },
+  buttonItem: {
+    width: 400, // Make buttons take 80% of the screen width
+    height: 60, // Standardized height
+    paddingVertical: 8, // Padding inside the button
+    paddingHorizontal: 50,
+    borderRadius: 10,
+    marginVertical: 8, // Keep spacing uniform
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  buttonText: {
+    fontSize: 30,
+    fontWeight: "bold",
+    color: "black",
+  },
 });
