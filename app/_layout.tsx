@@ -153,7 +153,7 @@ export default function RootLayout() {
     AccessibilityInfo.announceForAccessibility("Scanning in progress...");
   
     try {
-      const apiKey = process.env.BARCODE_LOOKUP_API_KEY;
+      const apiKey = "process.env.BARCODE_LOOKUP_API_KEY";
       const response = await fetch(
         `https://api.barcodelookup.com/v3/products?barcode=${data}&formatted=y&key=${apiKey}`
       );
@@ -199,7 +199,6 @@ export default function RootLayout() {
         });
   
         if (detectedIngredients.length === 0) {
-          Vibration.vibrate([0, 200, 100, 200]);
           AccessibilityInfo.announceForAccessibility("Product is safe to consume.");
         } else {
           Vibration.vibrate([0, 500, 200, 500]);
