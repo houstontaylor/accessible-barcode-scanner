@@ -19,6 +19,7 @@ import { useColorScheme } from "@/hooks/useColorScheme";
 import { IconSymbol } from '@/components/ui/IconSymbol';
 import { TapGestureHandler, State, HandlerStateChangeEvent, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Audio } from 'expo-av';
+import axios from "axios";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -37,10 +38,14 @@ export default function RootLayout() {
     setCurrentScreen("camera");
   };
   
-  type RestrictionType = {
-    [key: string]: boolean; // Keys are strings, values are boolean
-  };
-  const [restrictions, setRestrictions] = useState<RestrictionType>({
+  interface DietaryRestrictions {
+    Eggs: boolean;
+    Milk: boolean;
+    Peanuts: boolean;
+    Almonds: boolean;
+  }
+
+  const [restrictions, setRestrictions] = useState<DietaryRestrictions>({
     Eggs: false,
     Milk: false,
     Peanuts: true,
@@ -48,7 +53,7 @@ export default function RootLayout() {
   });  
 
   const [scanResult, setScanResult] = useState<{ isSafe: boolean; detectedIngredients: string[] } | null>(null);
-  const detectedIngredients = [];
+  const [alternativeItems, setAlternativeItems] = useState<string[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [facing, setFacing] = useState<CameraType>('back');
   const [permission, requestPermission] = useCameraPermissions();
@@ -100,6 +105,46 @@ export default function RootLayout() {
     }
   }, [errorMessage]);
 
+  const fetchAlternatives = async (productTitle: string) => {
+    setAlternativeItems([]); // Clear previous results
+  
+    const apiKey: string | undefined = process.env.OPENAI_API_KEY;
+    const restrictedIngredients: string = Object.keys(restrictions)
+      .filter((key) => restrictions[key as keyof DietaryRestrictions])
+      .join(", ");
+  
+    const prompt: string = `Given this item - ${productTitle} - can you give me a list of just the five most similar items that do not contain ${restrictedIngredients}?`;
+  
+    try {
+      const response = await axios.post(
+        "https://api.openai.com/v1/chat/completions",
+        {
+          model: "gpt-4",
+          messages: [{ role: "user", content: prompt }],
+          temperature: 0.7,
+          max_tokens: 100,
+        },
+        {
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+          },
+        }
+      );
+  
+      const resultText: string = response.data.choices[0]?.message?.content || "";
+      const fetchedItems: string[] = resultText
+        .split("\n")
+        .map((item) => item.replace(/^•\s*/, "").trim())
+        .filter((item) => item.length > 0);
+  
+      setAlternativeItems(fetchedItems);
+    } catch (error) {
+      console.error("Failed to fetch alternative items:", error);
+      setAlternativeItems(["Error fetching alternatives. Please try again."]);
+    }
+  };
+
   // call api when bacode scanned
   const handleBarcodeScanned = async ({ type, data }: { type: string; data: string }) => {
     if (scanStatus !== "idle") return;
@@ -108,7 +153,7 @@ export default function RootLayout() {
     AccessibilityInfo.announceForAccessibility("Scanning in progress...");
   
     try {
-      const apiKey = "YOUR_API_KEY";
+      const apiKey = "process.env.BARCODE_LOOKUP_API_KEY";
       const response = await fetch(
         `https://api.barcodelookup.com/v3/products?barcode=${data}&formatted=y&key=${apiKey}`
       );
@@ -126,16 +171,18 @@ export default function RootLayout() {
         const detectedIngredients = ingredientsList.filter((ingredient: string) => {
           const formattedIngredient = ingredient.trim().toLowerCase();
           
-          return Object.keys(restrictions).some((restriction) => {
-            const formattedRestriction = restriction.trim().toLowerCase();
-            
-            return (
-              restrictions[restriction] && 
-              (formattedIngredient.includes(formattedRestriction) || 
-              formattedIngredient.startsWith(formattedRestriction) ||
-              formattedIngredient.endsWith(formattedRestriction))
-            );
-          });
+          return (Object.keys(restrictions) as (keyof DietaryRestrictions)[]).some(
+            (restriction) => {
+              const formattedRestriction = restriction.trim().toLowerCase();
+              
+              return (
+                restrictions[restriction] && 
+                (formattedIngredient.includes(formattedRestriction) || 
+                formattedIngredient.startsWith(formattedRestriction) ||
+                formattedIngredient.endsWith(formattedRestriction))
+              );
+            }
+          );
         });        
   
         setScannedProduct({
@@ -159,6 +206,8 @@ export default function RootLayout() {
           AccessibilityInfo.announceForAccessibility(
             `Caution: This item contains ${detectedIngredients.join(", ")} from your restricted list.`
           );
+
+          await fetchAlternatives(product.title);
         }
   
         setScanStatus("scanned");
@@ -227,7 +276,7 @@ export default function RootLayout() {
           </View>
 
           <View style={styles.list}>
-            {Object.keys(restrictions).map((item) => (
+            {(Object.keys(restrictions) as (keyof DietaryRestrictions)[]).map((item) => (
               <TouchableOpacity
                 key={item}
                 style={[
@@ -237,10 +286,10 @@ export default function RootLayout() {
                   }, // Green if selected, Gray otherwise
                 ]}
                 onPress={() =>
-                  setRestrictions({
-                    ...restrictions,
-                    [item]: !restrictions[item],
-                  })
+                  setRestrictions((prev) => ({
+                    ...prev,
+                    [item]: !prev[item], // ✅ Fixes TypeScript error
+                  }))
                 }
                 accessibilityLabel={`${item}, currently ${
                   restrictions[item] ? "selected" : "not selected"
@@ -253,6 +302,7 @@ export default function RootLayout() {
               </TouchableOpacity>
             ))}
           </View>
+
 
           <TouchableOpacity
             style={styles.scanButton}
@@ -354,28 +404,36 @@ export default function RootLayout() {
         >
           <Text style={styles.nextScanButtonText}>Tap to Scan Next Item</Text>
         </TouchableOpacity>
+        {!scanResult.isSafe && (
+          <TouchableOpacity
+            style={styles.alternativeButton}
+            onPress={() => setCurrentScreen("alternativeItems")}
+          >
+            <Text style={styles.alternativeButtonText}>See Alternative Options</Text>
+          </TouchableOpacity>
+        )}
+
       </SafeAreaView>
     );
   }  
 
   if (currentScreen === "alternativeItems") {
-    const alternativeItems = [
-      "Sunflower Butter",
-      "Almond Butter",
-      "Soy Butter",
-    ];
-    const alternativeText = `Alternative Items: ${alternativeItems.join(", ")}`;
-
     return (
       <SafeAreaView style={styles.safeContainer}>
         <View style={styles.header}>
           <Text style={styles.headerText}>Alternative Items</Text>
         </View>
-
+  
         <View style={styles.alternativeContainer}>
-          <Text style={styles.alternativeText}>{alternativeText}</Text>
+          {alternativeItems.length === 0 ? (
+            <ActivityIndicator size="large" color="black" />
+          ) : (
+            <Text style={styles.alternativeText}>
+              Alternative Items: {alternativeItems.join(", ")}
+            </Text>
+          )}
         </View>
-
+  
         <TouchableOpacity
           style={styles.largeNextScanButton}
           onPress={goToCameraScreen}
@@ -384,7 +442,7 @@ export default function RootLayout() {
         </TouchableOpacity>
       </SafeAreaView>
     );
-  }
+  }  
 
   return null;
 }
