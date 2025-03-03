@@ -9,7 +9,8 @@ import {
   ScrollView,
   Image,
   ActivityIndicator,
-  Alert,
+  AccessibilityInfo,
+  Vibration,
 } from "react-native";
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import * as SplashScreen from "expo-splash-screen";
@@ -28,7 +29,14 @@ export default function RootLayout() {
   });
 
   const [currentScreen, setCurrentScreen] = useState("dietaryRestrictions");
-  const [scanCount, setScanCount] = useState(0);
+  const goToCameraScreen = () => {
+    setScanStatus("idle"); // Reset scanning state
+    setScannedProduct(null); // Clear last scanned product
+    setScanResult(null); // Clear last scan result
+    setErrorMessage(null); // Clear any error messages
+    setCurrentScreen("camera");
+  };
+  
   type RestrictionType = {
     [key: string]: boolean; // Keys are strings, values are boolean
   };
@@ -39,8 +47,9 @@ export default function RootLayout() {
     Almonds: false,
   });  
 
-  const isSafeScan = scanCount % 2 === 0;
-  const detectedIngredients = isSafeScan ? [] : ["Peanuts"];
+  const [scanResult, setScanResult] = useState<{ isSafe: boolean; detectedIngredients: string[] } | null>(null);
+  const detectedIngredients = [];
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [facing, setFacing] = useState<CameraType>('back');
   const [permission, requestPermission] = useCameraPermissions();
   const [flipSound, setFlipSound] = useState<Audio.Sound | null>(null);
@@ -62,13 +71,13 @@ export default function RootLayout() {
   useEffect(() => {
     if (currentScreen === "camera" && scanStatus === "scanning") {
       setTimeout(() => {
-        setScanCount((prev) => prev + 1);
         setScanStatus("scanned");
         setCurrentScreen("scanResult");
       }, 3000);
     }
   }, [scanStatus, currentScreen]);  
 
+  // play sound effect when camera facing is flipped
   useEffect(() => {
     const loadSound = async () => {
       const { sound } = await Audio.Sound.createAsync(require('@/assets/sounds/flip_sound.mp3'));
@@ -82,20 +91,24 @@ export default function RootLayout() {
     };
   }, []);
 
-  const handleBarcodeScanned = async ({ type, data }: { type: string; data: string }) => {
-    if (scanStatus !== "idle") return; 
+  useEffect(() => {
+    if (errorMessage) {
+      AccessibilityInfo.announceForAccessibility(errorMessage);
   
-    if (!/^\d{7,14}$/.test(data)) {
-      Alert.alert("Invalid Barcode", "The scanned barcode is not a valid format.", [
-        { text: "OK", onPress: () => setScanStatus("idle") },
-      ]);
-      return;
+      // Auto-hide error message after 4 seconds
+      setTimeout(() => setErrorMessage(null), 4000);
     }
-  
+  }, [errorMessage]);
+
+  // call api when bacode scanned
+  const handleBarcodeScanned = async ({ type, data }: { type: string; data: string }) => {
+    if (scanStatus !== "idle") return;
+    
     setScanStatus("scanning");
+    AccessibilityInfo.announceForAccessibility("Scanning in progress...");
   
     try {
-      const apiKey = "YOUR_ACTUAL_API_KEY"; 
+      const apiKey = "YOUR_API_KEY";
       const response = await fetch(
         `https://api.barcodelookup.com/v3/products?barcode=${data}&formatted=y&key=${apiKey}`
       );
@@ -108,6 +121,23 @@ export default function RootLayout() {
       const product = result.products?.[0] || null;
   
       if (product) {
+        const ingredientsList = product.ingredients?.split(", ") || [];
+
+        const detectedIngredients = ingredientsList.filter((ingredient: string) => {
+          const formattedIngredient = ingredient.trim().toLowerCase();
+          
+          return Object.keys(restrictions).some((restriction) => {
+            const formattedRestriction = restriction.trim().toLowerCase();
+            
+            return (
+              restrictions[restriction] && 
+              (formattedIngredient.includes(formattedRestriction) || 
+              formattedIngredient.startsWith(formattedRestriction) ||
+              formattedIngredient.endsWith(formattedRestriction))
+            );
+          });
+        });        
+  
         setScannedProduct({
           barcode: data,
           title: product.title,
@@ -116,20 +146,34 @@ export default function RootLayout() {
           image: product.images?.[0] || null,
         });
   
+        setScanResult({
+          isSafe: detectedIngredients.length === 0,
+          detectedIngredients,
+        });
+  
+        if (detectedIngredients.length === 0) {
+          Vibration.vibrate([0, 200, 100, 200]);
+          AccessibilityInfo.announceForAccessibility("Product is safe to consume.");
+        } else {
+          Vibration.vibrate([0, 500, 200, 500]);
+          AccessibilityInfo.announceForAccessibility(
+            `Caution: This item contains ${detectedIngredients.join(", ")} from your restricted list.`
+          );
+        }
+  
         setScanStatus("scanned");
-        setCurrentScreen("scanResult"); 
+        setCurrentScreen("scanResult");
       } else {
-        Alert.alert("No Product Found", "No details available for this barcode.", [
-          { text: "OK", onPress: () => setScanStatus("idle") },
-        ]);
+        throw new Error("No product found.");
       }
     } catch (error) {
       console.error("Error fetching product:", error);
-      Alert.alert("Error", "Failed to fetch product data.", [
-        { text: "OK", onPress: () => setScanStatus("idle") },
-      ]);
+      Vibration.vibrate(1000);
+      setErrorMessage("Failed to fetch product data. Please try again.");
+      setScanStatus("idle"); // Reset to allow rescan
+      setCurrentScreen("errorScreen");
     }
-  };    
+  };        
 
   const toggleCameraFacing = async () => {
     setFacing(current => (current === 'back' ? 'front' : 'back'));
@@ -147,6 +191,24 @@ export default function RootLayout() {
   if (!loaded) {
     return null;
   }
+
+  if (currentScreen === "errorScreen") {
+    return (
+      <SafeAreaView style={styles.safeContainer}>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>An error occurred.</Text>
+          <Text style={styles.errorMessage}>{errorMessage}</Text>
+  
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={goToCameraScreen}
+          >
+            <Text style={styles.retryButtonText}>Tap to Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }  
 
   // 📌 **Dietary Restrictions Page**
   if (currentScreen === "dietaryRestrictions") {
@@ -220,10 +282,24 @@ export default function RootLayout() {
           <TapGestureHandler onHandlerStateChange={handleDoubleTap} numberOfTaps={2}>
             <View style={styles.cameraContainer}> 
               <CameraView
-                style={StyleSheet.absoluteFill} // ✅ This ensures full screen!
+                style={StyleSheet.absoluteFill}
                 facing={facing}
                 onBarcodeScanned={scanStatus === "idle" ? handleBarcodeScanned : undefined}
               >
+                {errorMessage && (
+                  <View style={styles.errorBanner}>
+                    <Text style={styles.errorText} accessibilityLiveRegion="polite">
+                      {errorMessage}
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => setErrorMessage(null)}
+                      style={styles.dismissErrorButton}
+                      accessibilityLabel="Dismiss error"
+                    >
+                      <Text style={styles.dismissErrorText}>Dismiss</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
                 <View style={styles.overlayContainer}>
                   <TouchableOpacity onPress={toggleCameraFacing} style={styles.iconButton}>
                     <IconSymbol size={32} name="camera.rotate" color="white" weight="medium" />
@@ -235,43 +311,52 @@ export default function RootLayout() {
         </GestureHandlerRootView>
       );      
     }
-  }
+  }  
 
   // 🛑 **Scan Result Screen**
   if (currentScreen === "scanResult") {
-    if (!scannedProduct) {
-      return null;
-    } else {
-      return (
-        <SafeAreaView style={styles.safeContainer}>
-          <View style={styles.header}>
-            <Text style={styles.headerText}>Scan Result</Text>
-          </View>
-    
-          <View style={styles.resultContainer}>
-            {scannedProduct.image && (
-              <Image source={{ uri: scannedProduct.image }} style={styles.productImage} />
-            )}
-            <Text style={styles.productTitle}>{scannedProduct.title}</Text>
-            <Text style={styles.productBrand}>Brand: {scannedProduct.brand}</Text>
-            <Text style={styles.productBarcode}>Barcode: {scannedProduct.barcode}</Text>
-    
+    if (!scanResult) return null;
+  
+    return (
+      <SafeAreaView
+        style={[
+          styles.safeContainer,
+          { backgroundColor: scanResult.isSafe ? "#90EE90" : "#F08080" },
+        ]}
+      >
+        <View style={styles.resultContainer}>
+          <Text
+            style={[
+              styles.resultText,
+              { backgroundColor: scanResult.isSafe ? "#4CAF50" : "#D33" },
+            ]}
+          >
+            {scanResult.isSafe ? "SAFE TO CONSUME" : "CANNOT CONSUME"}
+          </Text>
+  
+          {!scanResult.isSafe && (
             <View style={styles.ingredientBox}>
-              <Text style={styles.ingredientText}>Ingredients:</Text>
-              <Text style={styles.ingredientItem}>{scannedProduct.ingredients}</Text>
+              <Text style={styles.ingredientText}>
+                This item contains the following ingredient(s) from your list:
+              </Text>
+              {scanResult.detectedIngredients.map((item, index) => (
+                <Text key={index} style={styles.ingredientItem}>
+                  • {item}
+                </Text>
+              ))}
             </View>
-          </View>
-    
-          <TouchableOpacity style={styles.nextScanButton} onPress={() => {
-            setScanStatus("idle");
-            setCurrentScreen("camera");
-          }}>
-            <Text style={styles.nextScanButtonText}>Scan Another Item</Text>
-          </TouchableOpacity>
-        </SafeAreaView>
-      );
-    }
-  }
+          )}
+        </View>
+  
+        <TouchableOpacity
+          style={styles.nextScanButton}
+          onPress={goToCameraScreen}
+        >
+          <Text style={styles.nextScanButtonText}>Tap to Scan Next Item</Text>
+        </TouchableOpacity>
+      </SafeAreaView>
+    );
+  }  
 
   if (currentScreen === "alternativeItems") {
     const alternativeItems = [
@@ -293,7 +378,7 @@ export default function RootLayout() {
 
         <TouchableOpacity
           style={styles.largeNextScanButton}
-          onPress={() => setCurrentScreen("camera")}
+          onPress={goToCameraScreen}
         >
           <Text style={styles.nextScanButtonText}>Tap to Scan Next Item</Text>
         </TouchableOpacity>
@@ -582,4 +667,65 @@ const styles = StyleSheet.create({
     overflow: "hidden",  
     paddingHorizontal: 10,
   },  
+
+  errorBanner: {
+    position: "absolute",
+    top: 20,
+    left: 20,
+    right: 20,
+    backgroundColor: "rgba(255, 0, 0, 0.8)",
+    padding: 10,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  
+  errorText: {
+    color: "white",
+    fontSize: 16,
+    fontWeight: "bold",
+  },  
+
+  dismissErrorButton: {
+    marginTop: 8,
+    paddingVertical: 5,
+    paddingHorizontal: 15,
+    backgroundColor: "white",
+    borderRadius: 5,
+  },
+  
+  dismissErrorText: {
+    color: "black",
+    fontSize: 14,
+    fontWeight: "bold",
+  },
+
+  errorContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#F08080",
+    padding: 20,
+  },
+  
+  errorMessage: {
+    fontSize: 18,
+    color: "white",
+    textAlign: "center",
+    marginVertical: 10,
+  },
+  
+  retryButton: {
+    marginTop: 20,
+    backgroundColor: "black",
+    paddingVertical: 15,
+    paddingHorizontal: 40,
+    borderRadius: 10,
+  },
+  
+  retryButtonText: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "white",
+  },
+  
 });
