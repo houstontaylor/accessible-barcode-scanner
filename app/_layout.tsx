@@ -13,10 +13,18 @@ import {
 import * as SplashScreen from "expo-splash-screen";
 import { useFonts } from "expo-font";
 import { useColorScheme } from "@/hooks/useColorScheme";
+import axios from "axios";
 
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
+  interface DietaryRestrictions {
+    Eggs: boolean;
+    Milk: boolean;
+    Peanuts: boolean;
+    Almonds: boolean;
+  }
+  
   const colorScheme = useColorScheme();
   const [loaded] = useFonts({
     SpaceMono: require("../assets/fonts/SpaceMono-Regular.ttf"),
@@ -25,7 +33,8 @@ export default function RootLayout() {
   const [currentScreen, setCurrentScreen] = useState("dietaryRestrictions");
   const [scanCount, setScanCount] = useState(0);
   const [isScanning, setIsScanning] = useState(false);
-  const [restrictions, setRestrictions] = useState({
+  const [itemName, setItemName] = useState("Peanut Butter");
+  const [restrictions, setRestrictions] = useState<DietaryRestrictions>({
     Eggs: false,
     Milk: false,
     Peanuts: true,
@@ -188,8 +197,57 @@ export default function RootLayout() {
   }
 
   if (currentScreen === "alternativeItems") {
-    const alternativeItems = ["Sunflower Butter", "Almond Butter", "Soy Butter"];
-    const alternativeText = `Alternative Items: ${alternativeItems.join(", ")}`;
+    const [alternativeItems, setAlternativeItems] = useState<string[]>([]);
+    const [loading, setLoading] = useState<boolean>(true);
+    const [error, setError] = useState<string | null>(null);
+    //const alternativeItems = ["Sunflower Butter", "Almond Butter", "Soy Butter"];
+
+    useEffect(() => {
+      const fetchAlternatives = async () => {
+        setLoading(true);
+        setError(null);
+  
+        const apiKey: string | undefined = process.env.OPENAI_API_KEY;
+        const restrictedIngredients: string = Object.keys(restrictions)
+          .filter((key) => restrictions[key as keyof DietaryRestrictions])
+          .join(", ");
+  
+        const prompt: string = `Given this item - ${itemName} - can you give me a list of just the five most similar items that do not contain ${restrictedIngredients}?`;
+  
+        try {
+          const response = await axios.post(
+            "https://api.openai.com/v1/chat/completions",
+            {
+              model: "gpt-4",
+              messages: [{ role: "user", content: prompt }],
+              temperature: 0.7,
+              max_tokens: 100,
+            },
+            {
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${apiKey}`,
+              },
+            }
+          );
+  
+          const resultText: string = response.data.choices[0]?.message?.content || "";
+          const fetchedItems: string[] = resultText
+            .split("\n")
+            .map((item) => item.replace(/^•\s*/, "").trim())
+            .filter((item) => item.length > 0);
+  
+          setAlternativeItems(fetchedItems);
+        } catch (error) {
+          setError("Failed to fetch alternative items.");
+          console.error(error);
+        } finally {
+          setLoading(false);
+        }
+      };
+  
+      fetchAlternatives();
+    }, []);
   
     return (
       <SafeAreaView style={styles.safeContainer}>
@@ -198,7 +256,15 @@ export default function RootLayout() {
         </View>
   
         <View style={styles.alternativeContainer}>
-          <Text style={styles.alternativeText}>{alternativeText}</Text>
+          {loading ? (
+            <ActivityIndicator size="large" color="black" />
+          ) : error ? (
+            <Text style={styles.alternativeText}>{error}</Text>
+          ) : (
+            <Text style={styles.alternativeText}>
+              Alternative Items: {alternativeItems.join(", ")}
+            </Text>
+          )}
         </View>
   
         <TouchableOpacity
