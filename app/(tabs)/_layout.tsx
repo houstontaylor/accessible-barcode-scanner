@@ -46,13 +46,6 @@ export default function RootLayout() {
       }}
     >
       <Tabs.Screen
-        name="profile"
-        options={{
-          title: 'Profile',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="person.fill" color={color} />,
-        }}
-      />
-      <Tabs.Screen
         name="grocery-list"
         options={{
           title: 'Grocery List',

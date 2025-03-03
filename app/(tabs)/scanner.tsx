@@ -1,6 +1,6 @@
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import { useState, useEffect } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View, Alert } from 'react-native';
 import { IconSymbol } from '@/components/ui/IconSymbol';
 import { TapGestureHandler, State, HandlerStateChangeEvent, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Audio } from 'expo-av';
@@ -9,6 +9,7 @@ export default function ScannerScreen() {
   const [facing, setFacing] = useState<CameraType>('back');
   const [permission, requestPermission] = useCameraPermissions();
   const [flipSound, setFlipSound] = useState<Audio.Sound | null>(null);
+  const [scanned, setScanned] = useState(false); // Prevents duplicate scans
 
   useEffect(() => {
     const loadSound = async () => {
@@ -38,6 +39,18 @@ export default function ScannerScreen() {
     );
   }
 
+  const handleBarcodeScanned = ({ type, data }: { type: string; data: string }) => {
+    if (!scanned) {
+      setScanned(true);
+
+      Alert.alert(
+        "Barcode Scanned!",
+        `Type: ${type}\nData: ${data}`,
+        [{ text: "OK", onPress: () => setScanned(false) }] // Reset scanning state
+      );
+    }
+  };
+
   const toggleCameraFacing = async () => {
     setFacing(current => (current === 'back' ? 'front' : 'back'));
     if (flipSound) {
@@ -58,14 +71,10 @@ export default function ScannerScreen() {
           <CameraView
             style={styles.camera}
             facing={facing}
+            onBarcodeScanned={handleBarcodeScanned}
           >
             <TouchableOpacity onPress={toggleCameraFacing} style={styles.iconButton}>
-              <IconSymbol
-                size={32}
-                name="camera.rotate"
-                color="white"
-                weight="medium"
-              />
+              <IconSymbol size={32} name="camera.rotate" color="white" weight="medium" />
             </TouchableOpacity>
           </CameraView>
         </View>
