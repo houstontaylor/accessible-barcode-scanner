@@ -153,7 +153,7 @@ export default function RootLayout() {
     AccessibilityInfo.announceForAccessibility("Scanning in progress...");
   
     try {
-      const apiKey = "process.env.BARCODE_LOOKUP_API_KEY";
+      const apiKey = process.env.BARCODE_LOOKUP_API_KEY;
       const response = await fetch(
         `https://api.barcodelookup.com/v3/products?barcode=${data}&formatted=y&key=${apiKey}`
       );
