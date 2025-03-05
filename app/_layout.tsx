@@ -146,82 +146,101 @@ export default function RootLayout() {
   };
 
   // call api when bacode scanned
+  const convertUPCEtoUPCA = (upce: string): string => {
+    if (upce.length !== 8) throw new Error("Invalid UPC-E format");
+  
+    // Convert UPC-E (compressed) to UPC-A (expanded)
+    return "0" + upce.substring(0, 6) + "0000" + upce[6] + upce[7];
+  };
+  
   const handleBarcodeScanned = async ({ type, data }: { type: string; data: string }) => {
     if (scanStatus !== "idle") return;
-    
+  
     setScanStatus("scanning");
     AccessibilityInfo.announceForAccessibility("Scanning in progress...");
   
     try {
-      const apiKey = "process.env.BARCODE_LOOKUP_API_KEY";
-      const response = await fetch(
-        `https://api.barcodelookup.com/v3/products?barcode=${data}&formatted=y&key=${apiKey}`
+      // Use the barcode as-is, unless it's UPC-E (8 digits), which we convert to UPC-A (12 digits)
+      const formattedBarcode = data.length === 8 ? convertUPCEtoUPCA(data) : data;
+      console.log("Formatted Barcode:", formattedBarcode);
+  
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      // API call to Open Food Facts
+      const response = await axios.get(
+        `https://world.openfoodfacts.org/api/v2/product/${formattedBarcode}.json`,
+        {
+          headers: {
+            "User-Agent": "YourAppName - YourContactInfo",
+          },
+        }
       );
   
-      if (!response.ok) {
-        throw new Error(`API Error: ${response.status}`);
-      }
-  
-      const result = await response.json();
-      const product = result.products?.[0] || null;
-  
-      if (product) {
-        const ingredientsList = product.ingredients?.split(", ") || [];
-
-        const detectedIngredients = ingredientsList.filter((ingredient: string) => {
-          const formattedIngredient = ingredient.trim().toLowerCase();
-          
-          return (Object.keys(restrictions) as (keyof DietaryRestrictions)[]).some(
-            (restriction) => {
-              const formattedRestriction = restriction.trim().toLowerCase();
-              
-              return (
-                restrictions[restriction] && 
-                (formattedIngredient.includes(formattedRestriction) || 
-                formattedIngredient.startsWith(formattedRestriction) ||
-                formattedIngredient.endsWith(formattedRestriction))
-              );
-            }
-          );
-        });        
-  
-        setScannedProduct({
-          barcode: data,
-          title: product.title,
-          brand: product.brand,
-          ingredients: product.ingredients || "Not listed",
-          image: product.images?.[0] || null,
-        });
-  
-        setScanResult({
-          isSafe: detectedIngredients.length === 0,
-          detectedIngredients,
-        });
-  
-        if (detectedIngredients.length === 0) {
-          AccessibilityInfo.announceForAccessibility("Product is safe to consume.");
-        } else {
-          Vibration.vibrate([0, 500, 200, 500]);
-          AccessibilityInfo.announceForAccessibility(
-            `Caution: This item contains ${detectedIngredients.join(", ")} from your restricted list.`
-          );
-
-          await fetchAlternatives(product.title);
-        }
-  
-        setScanStatus("scanned");
-        setCurrentScreen("scanResult");
-      } else {
+      // Check if product was found
+      if (!response.data || response.data.status !== 1) {
         throw new Error("No product found.");
       }
+  
+      const product = response.data.product;
+  
+      const title = product.product_name || "Unknown Product";
+      const brand = product.brands || "Unknown Brand";
+      const image = product.image_url || null;
+      const ingredientsList = product.ingredients_text ? product.ingredients_text.split(", ") : [];
+  
+      console.log("Product Data:", { title, brand, ingredientsList });
+  
+      // Check for restricted ingredients
+      const detectedIngredients = ingredientsList.filter((ingredient: string) => {
+        const formattedIngredient = ingredient.trim().toLowerCase();
+        return (Object.keys(restrictions) as (keyof DietaryRestrictions)[]).some(
+          (restriction) => {
+            const formattedRestriction = restriction.trim().toLowerCase();
+            return (
+              restrictions[restriction] &&
+              (formattedIngredient.includes(formattedRestriction) ||
+                formattedIngredient.startsWith(formattedRestriction) ||
+                formattedIngredient.endsWith(formattedRestriction))
+            );
+          }
+        );
+      });
+  
+      // Update state with scanned product details
+      setScannedProduct({
+        barcode: formattedBarcode,
+        title,
+        brand,
+        ingredients: ingredientsList.join(", ") || "Not listed",
+        image,
+      });
+  
+      setScanResult({
+        isSafe: detectedIngredients.length === 0,
+        detectedIngredients,
+      });
+  
+      // Provide accessibility feedback
+      if (detectedIngredients.length === 0) {
+        AccessibilityInfo.announceForAccessibility("Product is safe to consume.");
+      } else {
+        Vibration.vibrate([0, 500, 200, 500]);
+        AccessibilityInfo.announceForAccessibility(
+          `Caution: This item contains ${detectedIngredients.join(", ")} from your restricted list.`
+        );
+  
+        await fetchAlternatives(title);
+      }
+  
+      setScanStatus("scanned");
+      setCurrentScreen("scanResult");
     } catch (error) {
       console.error("Error fetching product:", error);
       Vibration.vibrate(1000);
       setErrorMessage("Failed to fetch product data. Please try again.");
-      setScanStatus("idle"); // Reset to allow rescan
-      setCurrentScreen("errorScreen");
+      setScanStatus("idle");
     }
-  };        
+  };  
 
   const toggleCameraFacing = async () => {
     setFacing(current => (current === 'back' ? 'front' : 'back'));
@@ -239,24 +258,6 @@ export default function RootLayout() {
   if (!loaded) {
     return null;
   }
-
-  if (currentScreen === "errorScreen") {
-    return (
-      <SafeAreaView style={styles.safeContainer}>
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>An error occurred.</Text>
-          <Text style={styles.errorMessage}>{errorMessage}</Text>
-  
-          <TouchableOpacity
-            style={styles.retryButton}
-            onPress={goToCameraScreen}
-          >
-            <Text style={styles.retryButtonText}>Tap to Retry</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    );
-  }  
 
   // 📌 **Dietary Restrictions Page**
   if (currentScreen === "dietaryRestrictions") {
@@ -754,35 +755,6 @@ const styles = StyleSheet.create({
     color: "black",
     fontSize: 14,
     fontWeight: "bold",
-  },
-
-  errorContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#F08080",
-    padding: 20,
-  },
-  
-  errorMessage: {
-    fontSize: 18,
-    color: "white",
-    textAlign: "center",
-    marginVertical: 10,
-  },
-  
-  retryButton: {
-    marginTop: 20,
-    backgroundColor: "black",
-    paddingVertical: 15,
-    paddingHorizontal: 40,
-    borderRadius: 10,
-  },
-  
-  retryButtonText: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "white",
   },
   
 });
