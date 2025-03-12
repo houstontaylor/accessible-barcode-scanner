@@ -12,13 +12,18 @@ import {
   AccessibilityInfo,
   Vibration,
 } from "react-native";
-import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
+import { CameraView, CameraType, useCameraPermissions } from "expo-camera";
 import * as SplashScreen from "expo-splash-screen";
 import { useFonts } from "expo-font";
 import { useColorScheme } from "@/hooks/useColorScheme";
-import { IconSymbol } from '@/components/ui/IconSymbol';
-import { TapGestureHandler, State, HandlerStateChangeEvent, GestureHandlerRootView } from 'react-native-gesture-handler';
-import { Audio } from 'expo-av';
+import { IconSymbol } from "@/components/ui/IconSymbol";
+import {
+  TapGestureHandler,
+  State,
+  HandlerStateChangeEvent,
+  GestureHandlerRootView,
+} from "react-native-gesture-handler";
+import { Audio } from "expo-av";
 import axios from "axios";
 
 SplashScreen.preventAutoHideAsync();
@@ -37,7 +42,7 @@ export default function RootLayout() {
     setErrorMessage(null); // Clear any error messages
     setCurrentScreen("camera");
   };
-  
+
   interface DietaryRestrictions {
     Eggs: boolean;
     Milk: boolean;
@@ -50,22 +55,27 @@ export default function RootLayout() {
     Milk: false,
     Peanuts: true,
     Almonds: false,
-  });  
+  });
 
-  const [scanResult, setScanResult] = useState<{ isSafe: boolean; detectedIngredients: string[] } | null>(null);
+  const [scanResult, setScanResult] = useState<{
+    isSafe: boolean;
+    detectedIngredients: string[];
+  } | null>(null);
   const [alternativeItems, setAlternativeItems] = useState<string[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [facing, setFacing] = useState<CameraType>('back');
+  const [facing, setFacing] = useState<CameraType>("back");
   const [permission, requestPermission] = useCameraPermissions();
   const [flipSound, setFlipSound] = useState<Audio.Sound | null>(null);
-  const [scanStatus, setScanStatus] = useState<"idle" | "scanning" | "scanned">("idle");
+  const [scanStatus, setScanStatus] = useState<"idle" | "scanning" | "scanned">(
+    "idle"
+  );
   const [scannedProduct, setScannedProduct] = useState<{
     barcode: string;
     title: string;
     brand: string;
     ingredients: string;
     image: string | null;
-  } | null>(null);  
+  } | null>(null);
 
   useEffect(() => {
     if (loaded) {
@@ -80,12 +90,14 @@ export default function RootLayout() {
         setCurrentScreen("scanResult");
       }, 3000);
     }
-  }, [scanStatus, currentScreen]);  
+  }, [scanStatus, currentScreen]);
 
   // play sound effect when camera facing is flipped
   useEffect(() => {
     const loadSound = async () => {
-      const { sound } = await Audio.Sound.createAsync(require('@/assets/sounds/flip_sound.mp3'));
+      const { sound } = await Audio.Sound.createAsync(
+        require("@/assets/sounds/flip_sound.mp3")
+      );
       setFlipSound(sound);
     };
 
@@ -99,7 +111,7 @@ export default function RootLayout() {
   useEffect(() => {
     if (errorMessage) {
       AccessibilityInfo.announceForAccessibility(errorMessage);
-  
+
       // Auto-hide error message after 4 seconds
       setTimeout(() => setErrorMessage(null), 4000);
     }
@@ -158,7 +170,7 @@ export default function RootLayout() {
   const fetchAlternatives = async (productTitle: string) => {
     setAlternativeItems([]); // Clear previous results
   
-    const apiKey: string | undefined = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
+    const apiKey: string | undefined = process.env.OPENAI_API_KEY;
     
     if (!apiKey) {
       console.error("OpenAI API key is missing. Check your .env file.");
@@ -169,9 +181,9 @@ export default function RootLayout() {
     const restrictedIngredients: string = Object.keys(restrictions)
       .filter((key) => restrictions[key as keyof DietaryRestrictions])
       .join(", ");
-  
-    const prompt: string = `Given this item - ${productTitle} - can you suggest five similar items that do not contain ${restrictedIngredients}?`;
-  
+
+    const prompt: string = `Given this item - ${productTitle} - can you give me a list of just the five most similar items that do not contain ${restrictedIngredients}?`;
+
     try {
       const response = await axios.post(
         "https://api.openai.com/v1/chat/completions",
@@ -188,8 +200,9 @@ export default function RootLayout() {
           },
         }
       );
-  
-      const resultText: string = response.data.choices[0]?.message?.content || "";
+
+      const resultText: string =
+        response.data.choices[0]?.message?.content || "";
       const fetchedItems: string[] = resultText
         .split("\n")
         .map((item) => item.replace(/^•\s*/, "").trim())
@@ -205,40 +218,51 @@ export default function RootLayout() {
   // call api when bacode scanned
   const convertUPCEtoUPCA = (upce: string): string => {
     if (upce.length !== 8) throw new Error("Invalid UPC-E format");
-  
+
     // Convert UPC-E (compressed) to UPC-A (expanded)
     return "0" + upce.substring(0, 6) + "0000" + upce[6] + upce[7];
   };
-  
-  const handleBarcodeScanned = async ({ type, data }: { type: string; data: string }) => {
-    if (scanStatus !== "idle") return; // Prevent multiple scans
-  
-    setScanStatus("scanning"); // Disable scanning immediately
+
+  const handleBarcodeScanned = async ({
+    type,
+    data,
+  }: {
+    type: string;
+    data: string;
+  }) => {
+    if (scanStatus !== "idle") return;
+
+    setScanStatus("scanning");
     AccessibilityInfo.announceForAccessibility("Scanning in progress...");
-  
+
     try {
-      const formattedBarcode = data.length === 8 ? convertUPCEtoUPCA(data) : data;
-      
+      // Use the barcode as-is, unless it's UPC-E (8 digits), which we convert to UPC-A (12 digits)
+      const formattedBarcode =
+        data.length === 8 ? convertUPCEtoUPCA(data) : data;
       console.log("Formatted Barcode:", formattedBarcode);
-  
-      await new Promise((resolve) => setTimeout(resolve, 500)); // Prevent duplicate scans
-  
+
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
       // API call to Open Food Facts
       const response = await axios.get(
         `https://world.openfoodfacts.org/api/v2/product/${formattedBarcode}.json`,
         { headers: { "User-Agent": "YourAppName - YourContactInfo" } }
       );
-  
+
+      // Check if product was found
       if (!response.data || response.data.status !== 1) {
         throw new Error("No product found.");
       }
-  
+
       const product = response.data.product;
+
       const title = product.product_name || "Unknown Product";
       const brand = product.brands || "Unknown Brand";
       const image = product.image_url || null;
-      let ingredientsList = product.ingredients_text ? product.ingredients_text.split(", ") : [];
-  
+      const ingredientsList = product.ingredients_text
+        ? product.ingredients_text.split(", ")
+        : [];
+
       console.log("Product Data:", { title, brand, ingredientsList });
   
       let detectedIngredients: string[] = [];
@@ -281,15 +305,20 @@ export default function RootLayout() {
       setScanResult({ isSafe: detectedIngredients.length === 0, detectedIngredients });
   
       if (detectedIngredients.length === 0) {
-        AccessibilityInfo.announceForAccessibility("Product is safe to consume.");
+        AccessibilityInfo.announceForAccessibility(
+          "Product is safe to consume. Press the bottom of the page to scan the next item."
+        );
       } else {
         Vibration.vibrate([0, 500, 200, 500]);
-        AccessibilityInfo.announceForAccessibility(`Caution: This item contains ${detectedIngredients.join(", ")}.`);
-  
-        // **📌 Call `fetchAlternatives()` here**
+        AccessibilityInfo.announceForAccessibility(
+          `Caution: This item contains ${detectedIngredients.join(
+            ", "
+          )} from your restricted list. Press the bottom of the page to scan the next item.`
+        );
+
         await fetchAlternatives(title);
       }
-  
+
       setScanStatus("scanned");
       setCurrentScreen("scanResult");
     } catch (error) {
@@ -298,10 +327,10 @@ export default function RootLayout() {
       setErrorMessage("Failed to fetch product data. Please try again.");
       setScanStatus("idle");
     }
-  };    
+  };
 
   const toggleCameraFacing = async () => {
-    setFacing(current => (current === 'back' ? 'front' : 'back'));
+    setFacing((current) => (current === "back" ? "front" : "back"));
     if (flipSound) {
       await flipSound.replayAsync();
     }
@@ -312,6 +341,16 @@ export default function RootLayout() {
       await toggleCameraFacing();
     }
   };
+
+  useEffect(() => {
+    if (currentScreen === "dietaryRestrictions") {
+      setTimeout(() => {
+        AccessibilityInfo.announceForAccessibility(
+          "You are now on the page where you can select your dietary restrictions. Press in the middle of the screenn to choose your restriction, and on the bottom to open the barcode scanner."
+        );
+      }, 500); // Short delay to ensure VoiceOver prioritizes this message
+    }
+  }, [currentScreen]);
 
   if (!loaded) {
     return null;
@@ -334,33 +373,36 @@ export default function RootLayout() {
           </View>
 
           <View style={styles.list}>
-            {(Object.keys(restrictions) as (keyof DietaryRestrictions)[]).map((item) => (
-              <TouchableOpacity
-                key={item}
-                style={[
-                  styles.buttonItem,
-                  {
-                    backgroundColor: restrictions[item] ? "#4CAF50" : "#E0E0E0",
-                  }, // Green if selected, Gray otherwise
-                ]}
-                onPress={() =>
-                  setRestrictions((prev) => ({
-                    ...prev,
-                    [item]: !prev[item], // ✅ Fixes TypeScript error
-                  }))
-                }
-                accessibilityLabel={`${item}, currently ${
-                  restrictions[item] ? "selected" : "not selected"
-                }`}
-                accessibilityHint={`Double tap to ${
-                  restrictions[item] ? "deselect" : "select"
-                } ${item}`}
-              >
-                <Text style={styles.buttonText}>{item}</Text>
-              </TouchableOpacity>
-            ))}
+            {(Object.keys(restrictions) as (keyof DietaryRestrictions)[]).map(
+              (item) => (
+                <TouchableOpacity
+                  key={item}
+                  style={[
+                    styles.buttonItem,
+                    {
+                      backgroundColor: restrictions[item]
+                        ? "#4CAF50"
+                        : "#E0E0E0",
+                    }, // Green if selected, Gray otherwise
+                  ]}
+                  onPress={() =>
+                    setRestrictions((prev) => ({
+                      ...prev,
+                      [item]: !prev[item], // ✅ Fixes TypeScript error
+                    }))
+                  }
+                  accessibilityLabel={`${item}, currently ${
+                    restrictions[item] ? "selected" : "not selected"
+                  }`}
+                  accessibilityHint={`Double tap to ${
+                    restrictions[item] ? "deselect" : "select"
+                  } ${item}`}
+                >
+                  <Text style={styles.buttonText}>{item}</Text>
+                </TouchableOpacity>
+              )
+            )}
           </View>
-
 
           <TouchableOpacity
             style={styles.scanButton}
@@ -378,8 +420,13 @@ export default function RootLayout() {
     if (!permission || !permission.granted) {
       return (
         <SafeAreaView style={styles.safeContainer}>
-          <Text style={styles.permissionText}>We need access to your camera.</Text>
-          <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
+          <Text style={styles.permissionText}>
+            We need access to your camera.
+          </Text>
+          <TouchableOpacity
+            style={styles.permissionButton}
+            onPress={requestPermission}
+          >
             <Text style={styles.permissionText}>Grant Permission</Text>
           </TouchableOpacity>
         </SafeAreaView>
@@ -387,16 +434,24 @@ export default function RootLayout() {
     } else {
       return (
         <GestureHandlerRootView style={{ flex: 1 }}>
-          <TapGestureHandler onHandlerStateChange={handleDoubleTap} numberOfTaps={2}>
-            <View style={styles.cameraContainer}> 
+          <TapGestureHandler
+            onHandlerStateChange={handleDoubleTap}
+            numberOfTaps={2}
+          >
+            <View style={styles.cameraContainer}>
               <CameraView
                 style={StyleSheet.absoluteFill}
                 facing={facing}
-                onBarcodeScanned={scanStatus === "idle" ? handleBarcodeScanned : undefined}
+                onBarcodeScanned={
+                  scanStatus === "idle" ? handleBarcodeScanned : undefined
+                }
               >
                 {errorMessage && (
                   <View style={styles.errorBanner}>
-                    <Text style={styles.errorText} accessibilityLiveRegion="polite">
+                    <Text
+                      style={styles.errorText}
+                      accessibilityLiveRegion="polite"
+                    >
                       {errorMessage}
                     </Text>
                     <TouchableOpacity
@@ -409,22 +464,30 @@ export default function RootLayout() {
                   </View>
                 )}
                 <View style={styles.overlayContainer}>
-                  <TouchableOpacity onPress={toggleCameraFacing} style={styles.iconButton}>
-                    <IconSymbol size={32} name="camera.rotate" color="white" weight="medium" />
+                  <TouchableOpacity
+                    onPress={toggleCameraFacing}
+                    style={styles.iconButton}
+                  >
+                    <IconSymbol
+                      size={32}
+                      name="camera.rotate"
+                      color="white"
+                      weight="medium"
+                    />
                   </TouchableOpacity>
                 </View>
               </CameraView>
             </View>
           </TapGestureHandler>
         </GestureHandlerRootView>
-      );      
+      );
     }
-  }  
+  }
 
   // 🛑 **Scan Result Screen**
   if (currentScreen === "scanResult") {
     if (!scanResult) return null;
-  
+
     return (
       <SafeAreaView
         style={[
@@ -441,7 +504,7 @@ export default function RootLayout() {
           >
             {scanResult.isSafe ? "SAFE TO CONSUME" : "CANNOT CONSUME"}
           </Text>
-  
+
           {!scanResult.isSafe && (
             <View style={styles.ingredientBox}>
               <Text style={styles.ingredientText}>
@@ -455,7 +518,7 @@ export default function RootLayout() {
             </View>
           )}
         </View>
-  
+
         <TouchableOpacity
           style={styles.nextScanButton}
           onPress={goToCameraScreen}
@@ -467,13 +530,14 @@ export default function RootLayout() {
             style={styles.alternativeButton}
             onPress={() => setCurrentScreen("alternativeItems")}
           >
-            <Text style={styles.alternativeButtonText}>See Alternative Options</Text>
+            <Text style={styles.alternativeButtonText}>
+              See Alternative Options
+            </Text>
           </TouchableOpacity>
         )}
-
       </SafeAreaView>
     );
-  }  
+  }
 
   if (currentScreen === "alternativeItems") {
     return (
@@ -481,7 +545,7 @@ export default function RootLayout() {
         <View style={styles.header}>
           <Text style={styles.headerText}>Alternative Items</Text>
         </View>
-  
+
         <View style={styles.alternativeContainer}>
           {alternativeItems.length === 0 ? (
             <ActivityIndicator size="large" color="black" />
@@ -491,7 +555,7 @@ export default function RootLayout() {
             </Text>
           )}
         </View>
-  
+
         <TouchableOpacity
           style={styles.largeNextScanButton}
           onPress={goToCameraScreen}
@@ -500,7 +564,7 @@ export default function RootLayout() {
         </TouchableOpacity>
       </SafeAreaView>
     );
-  }  
+  }
 
   return null;
 }
@@ -626,12 +690,12 @@ const styles = StyleSheet.create({
   },
 
   ingredientText: {
-    fontSize: 18, 
+    fontSize: 18,
     fontWeight: "bold",
-    color: "black", 
+    color: "black",
     textAlign: "center",
     marginVertical: 10,
-  },  
+  },
 
   nextScanButton: {
     backgroundColor: "black",
@@ -708,21 +772,21 @@ const styles = StyleSheet.create({
   },
 
   message: {
-    textAlign: 'center',
+    textAlign: "center",
     paddingBottom: 10,
-    color: 'white',
+    color: "white",
   },
 
   permissionButton: {
-    backgroundColor: '#1E90FF',
+    backgroundColor: "#1E90FF",
     padding: 10,
     borderRadius: 5,
-    alignItems: 'center',
+    alignItems: "center",
   },
 
   permissionText: {
-    color: 'white',
-    fontWeight: 'bold',
+    color: "white",
+    fontWeight: "bold",
   },
 
   camera: {
@@ -737,12 +801,12 @@ const styles = StyleSheet.create({
     padding: 20,
     alignItems: "flex-end",
   },
-  
+
   iconButton: {
     backgroundColor: "rgba(0, 0, 0, 0.5)",
     borderRadius: 50,
     padding: 10,
-  },  
+  },
 
   productImage: {
     width: 150,
@@ -750,39 +814,39 @@ const styles = StyleSheet.create({
     resizeMode: "contain",
     marginBottom: 10,
   },
-  
+
   productTitle: {
     fontSize: 20,
     fontWeight: "bold",
     textAlign: "center",
     marginBottom: 5,
   },
-  
+
   productBrand: {
     fontSize: 16,
     color: "#555",
     textAlign: "center",
   },
-  
+
   productBarcode: {
     fontSize: 14,
     color: "#888",
     textAlign: "center",
     marginBottom: 10,
-  },  
+  },
 
   ingredientItem: {
-    fontSize: 16,  
-    fontWeight: "500",  
-    color: "#D33",       
-    textAlign: "center", 
+    fontSize: 16,
+    fontWeight: "500",
+    color: "#D33",
+    textAlign: "center",
     marginTop: 5,
-    paddingVertical: 4,  
-    backgroundColor: "#FFF5F5", 
-    borderRadius: 5,    
-    overflow: "hidden",  
+    paddingVertical: 4,
+    backgroundColor: "#FFF5F5",
+    borderRadius: 5,
+    overflow: "hidden",
     paddingHorizontal: 10,
-  },  
+  },
 
   errorBanner: {
     position: "absolute",
@@ -794,12 +858,12 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: "center",
   },
-  
+
   errorText: {
     color: "white",
     fontSize: 16,
     fontWeight: "bold",
-  },  
+  },
 
   dismissErrorButton: {
     marginTop: 8,
@@ -808,11 +872,10 @@ const styles = StyleSheet.create({
     backgroundColor: "white",
     borderRadius: 5,
   },
-  
+
   dismissErrorText: {
     color: "black",
     fontSize: 14,
     fontWeight: "bold",
   },
-  
 });
