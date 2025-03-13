@@ -66,6 +66,7 @@ export default function RootLayout() {
   const [facing, setFacing] = useState<CameraType>("back");
   const [permission, requestPermission] = useCameraPermissions();
   const [flipSound, setFlipSound] = useState<Audio.Sound | null>(null);
+  const [scanSound, setScanSound] = useState<Audio.Sound | null>(null);
   const [scanStatus, setScanStatus] = useState<"idle" | "scanning" | "scanned">(
     "idle"
   );
@@ -105,6 +106,21 @@ export default function RootLayout() {
 
     return () => {
       flipSound?.unloadAsync();
+    };
+  }, []);
+
+  useEffect(() => {
+    const loadScanSound = async () => {
+      const { sound } = await Audio.Sound.createAsync(
+        require("@/assets/sounds/scan_sound.mp3")
+      );
+      setScanSound(sound);
+    };
+
+    loadScanSound();
+
+    return () => {
+      scanSound?.unloadAsync();
     };
   }, []);
 
@@ -163,6 +179,9 @@ export default function RootLayout() {
       return detectedAllergens.length > 0 ? detectedAllergens : [];
     } catch (error) {
       console.error("Failed to fetch product info from AI:", error);
+      AccessibilityInfo.announceForAccessibility(
+        "AI check failed. Unable to determine allergens."
+      );
       return [];
     }
   };  
@@ -233,6 +252,9 @@ export default function RootLayout() {
     if (scanStatus !== "idle") return;
 
     setScanStatus("scanning");
+    if (scanSound) {
+      await scanSound.replayAsync();
+    }
     AccessibilityInfo.announceForAccessibility("Scanning in progress...");
 
     try {
@@ -446,6 +468,12 @@ export default function RootLayout() {
                   scanStatus === "idle" ? handleBarcodeScanned : undefined
                 }
               >
+                {scanStatus === "scanning" && (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color="white" />
+                  <Text style={styles.loadingText}>Processing...</Text>
+                </View>
+                )}
                 {errorMessage && (
                   <View style={styles.errorBanner}>
                     <Text
@@ -877,5 +905,22 @@ const styles = StyleSheet.create({
     color: "black",
     fontSize: 14,
     fontWeight: "bold",
+  },
+
+  loadingContainer: {
+    position: "absolute",
+    top: "50%",
+    left: "50%",
+    transform: [{ translateX: -50 }, { translateY: -50 }],
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    padding: 20,
+    borderRadius: 10,
+  },
+  
+  loadingText: {
+    color: "white",
+    fontSize: 18,
+    marginTop: 10,
   },
 });
