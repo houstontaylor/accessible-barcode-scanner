@@ -105,15 +105,72 @@ export default function RootLayout() {
     }
   }, [errorMessage]);
 
+  const fetchProductInfoFromAI = async (
+    productTitle: string,
+    userRestrictions: DietaryRestrictions
+  ): Promise<string[]> => {
+    const apiKey: string | undefined = process.env.OPENAI_API_KEY;
+  
+    const prompt = `What are the common allergens in a commercially available product like ${productTitle}? 
+    List them without explanation, separated by commas.`;
+  
+    try {
+      const response = await axios.post(
+        "https://api.openai.com/v1/chat/completions",
+        {
+          model: "gpt-4",
+          messages: [{ role: "user", content: prompt }],
+          temperature: 0.7,
+          max_tokens: 100,
+        },
+        {
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+          },
+        }
+      );
+  
+      const aiResponse: string = response.data.choices[0]?.message?.content || "";
+      console.log("AI Allergens:", aiResponse);
+  
+      // Convert AI response into an array of allergens
+      const aiAllergens: string[] = aiResponse
+        .split(",")
+        .map((allergen) => allergen.trim().toLowerCase());
+  
+      // **Filter only allergens matching the user's dietary restrictions**
+      const detectedAllergens: string[] = aiAllergens.filter((allergen) =>
+        Object.keys(userRestrictions).some(
+          (restriction) =>
+            userRestrictions[restriction as keyof DietaryRestrictions] &&
+            allergen.includes(restriction.toLowerCase())
+        )
+      );
+  
+      return detectedAllergens.length > 0 ? detectedAllergens : [];
+    } catch (error) {
+      console.error("Failed to fetch product info from AI:", error);
+      return [];
+    }
+  };  
+
   const fetchAlternatives = async (productTitle: string) => {
     setAlternativeItems([]); // Clear previous results
   
-    const apiKey: string | undefined = process.env.OPENAI_API_KEY;
+    const apiKey: string | undefined = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
+    
+    if (!apiKey) {
+      console.error("OpenAI API key is missing. Check your .env file.");
+      setAlternativeItems(["Unable to fetch alternatives. API key missing."]);
+      return;
+    }
+  
     const restrictedIngredients: string = Object.keys(restrictions)
       .filter((key) => restrictions[key as keyof DietaryRestrictions])
       .join(", ");
   
-    const prompt: string = `Given this item - ${productTitle} - can you give me a list of just the five most similar items that do not contain ${restrictedIngredients}?`;
+    const prompt: string = `Given this item - ${productTitle} - can you suggest five similar items that do not contain ${restrictedIngredients}?`;
   
     try {
       const response = await axios.post(
@@ -138,12 +195,12 @@ export default function RootLayout() {
         .map((item) => item.replace(/^•\s*/, "").trim())
         .filter((item) => item.length > 0);
   
-      setAlternativeItems(fetchedItems);
+      setAlternativeItems(fetchedItems.length > 0 ? fetchedItems : ["No alternatives found."]);
     } catch (error) {
       console.error("Failed to fetch alternative items:", error);
       setAlternativeItems(["Error fetching alternatives. Please try again."]);
     }
-  };
+  };  
 
   // call api when bacode scanned
   const convertUPCEtoUPCA = (upce: string): string => {
@@ -154,81 +211,82 @@ export default function RootLayout() {
   };
   
   const handleBarcodeScanned = async ({ type, data }: { type: string; data: string }) => {
-    if (scanStatus !== "idle") return;
+    if (scanStatus !== "idle") return; // Prevent multiple scans
   
-    setScanStatus("scanning");
+    setScanStatus("scanning"); // Disable scanning immediately
     AccessibilityInfo.announceForAccessibility("Scanning in progress...");
   
     try {
-      // Use the barcode as-is, unless it's UPC-E (8 digits), which we convert to UPC-A (12 digits)
       const formattedBarcode = data.length === 8 ? convertUPCEtoUPCA(data) : data;
+      
       console.log("Formatted Barcode:", formattedBarcode);
   
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
+      await new Promise((resolve) => setTimeout(resolve, 500)); // Prevent duplicate scans
+  
       // API call to Open Food Facts
       const response = await axios.get(
         `https://world.openfoodfacts.org/api/v2/product/${formattedBarcode}.json`,
-        {
-          headers: {
-            "User-Agent": "YourAppName - YourContactInfo",
-          },
-        }
+        { headers: { "User-Agent": "YourAppName - YourContactInfo" } }
       );
   
-      // Check if product was found
       if (!response.data || response.data.status !== 1) {
         throw new Error("No product found.");
       }
   
       const product = response.data.product;
-  
       const title = product.product_name || "Unknown Product";
       const brand = product.brands || "Unknown Brand";
       const image = product.image_url || null;
-      const ingredientsList = product.ingredients_text ? product.ingredients_text.split(", ") : [];
+      let ingredientsList = product.ingredients_text ? product.ingredients_text.split(", ") : [];
   
       console.log("Product Data:", { title, brand, ingredientsList });
   
-      // Check for restricted ingredients
-      const detectedIngredients = ingredientsList.filter((ingredient: string) => {
-        const formattedIngredient = ingredient.trim().toLowerCase();
-        return (Object.keys(restrictions) as (keyof DietaryRestrictions)[]).some(
-          (restriction) => {
-            const formattedRestriction = restriction.trim().toLowerCase();
-            return (
-              restrictions[restriction] &&
-              (formattedIngredient.includes(formattedRestriction) ||
-                formattedIngredient.startsWith(formattedRestriction) ||
-                formattedIngredient.endsWith(formattedRestriction))
-            );
-          }
-        );
-      });
+      let detectedIngredients: string[] = [];
   
-      // Update state with scanned product details
-      setScannedProduct({
-        barcode: formattedBarcode,
-        title,
-        brand,
-        ingredients: ingredientsList.join(", ") || "Not listed",
-        image,
-      });
+      // **If ingredient data is missing, call OpenAI**
+      if (ingredientsList.length === 0) {
+        console.warn("No ingredient data available. Checking OpenAI for allergens...");
+        detectedIngredients = await fetchProductInfoFromAI(title, restrictions);
   
-      setScanResult({
-        isSafe: detectedIngredients.length === 0,
-        detectedIngredients,
-      });
+        if (detectedIngredients.length === 0) {
+          console.log("AI found no allergens matching user's restrictions. Marking as safe.");
+          setScanResult({ isSafe: true, detectedIngredients: [] });
+          AccessibilityInfo.announceForAccessibility("Product is likely safe to consume.");
+        } else {
+          console.warn(`AI detected allergens matching user's restrictions: ${detectedIngredients.join(", ")}`);
+          setScanResult({ isSafe: false, detectedIngredients });
+          AccessibilityInfo.announceForAccessibility(`Caution: This item contains ${detectedIngredients.join(", ")}.`);
+          Vibration.vibrate([0, 500, 200, 500]);
   
-      // Provide accessibility feedback
+          // **📌 Call `fetchAlternatives()` here**
+          await fetchAlternatives(title);
+        }
+  
+        setScannedProduct({ barcode: formattedBarcode, title, brand, ingredients: "No ingredient data available", image });
+        setScanStatus("scanned");
+        setCurrentScreen("scanResult");
+        return;
+      }
+  
+      // **Check for restricted ingredients in Open Food Facts ingredient list**
+      detectedIngredients = ingredientsList.filter((ingredient: string) =>
+        Object.keys(restrictions).some(
+          (restriction) =>
+            restrictions[restriction as keyof DietaryRestrictions] &&
+            ingredient.toLowerCase().includes(restriction.toLowerCase())
+        )
+      );
+  
+      setScannedProduct({ barcode: formattedBarcode, title, brand, ingredients: ingredientsList.join(", "), image });
+      setScanResult({ isSafe: detectedIngredients.length === 0, detectedIngredients });
+  
       if (detectedIngredients.length === 0) {
         AccessibilityInfo.announceForAccessibility("Product is safe to consume.");
       } else {
         Vibration.vibrate([0, 500, 200, 500]);
-        AccessibilityInfo.announceForAccessibility(
-          `Caution: This item contains ${detectedIngredients.join(", ")} from your restricted list.`
-        );
+        AccessibilityInfo.announceForAccessibility(`Caution: This item contains ${detectedIngredients.join(", ")}.`);
   
+        // **📌 Call `fetchAlternatives()` here**
         await fetchAlternatives(title);
       }
   
@@ -240,7 +298,7 @@ export default function RootLayout() {
       setErrorMessage("Failed to fetch product data. Please try again.");
       setScanStatus("idle");
     }
-  };  
+  };    
 
   const toggleCameraFacing = async () => {
     setFacing(current => (current === 'back' ? 'front' : 'back'));
