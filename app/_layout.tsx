@@ -53,7 +53,7 @@ export default function RootLayout() {
   const [restrictions, setRestrictions] = useState<DietaryRestrictions>({
     Eggs: false,
     Milk: false,
-    Peanuts: true,
+    Peanuts: false,
     Almonds: false,
   });
 
